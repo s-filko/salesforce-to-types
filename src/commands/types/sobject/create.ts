@@ -2,6 +2,8 @@ import { core, flags, SfdxCommand } from '@salesforce/command';
 import { some } from 'lodash';
 import { join } from 'path';
 
+// Convert fs.readFile into Promise version of same    
+
 // Initialize Messages with the current plugin directory
 core.Messages.importMessagesDirectory(__dirname);
 
@@ -49,8 +51,14 @@ export default class Org extends SfdxCommand {
     sobject: flags.string({
       char: 's',
       description: messages.getMessage('sobjectFlagDescription'),
-      required: true
+      required: false
+    }),
+    config: flags.string({
+      char: 'c',
+      description: 'config file',
+      required: false
     })
+
   };
 
   // Comment this out if your command does not require an org username
@@ -59,6 +67,7 @@ export default class Org extends SfdxCommand {
   private createdFiles = [];
 
   public async run(): Promise<core.AnyJson> {
+    await 
     await this.createBaseSObjectType();
     await this.generateSObjectType();
 
@@ -84,18 +93,15 @@ export default class Org extends SfdxCommand {
     }
   }
 
-  private async generateSObjectType() {
+  private async generateSObjectTypeContents(objectName: string, sObjects?: Array<String>) {
     const conn = this.org.getConnection();
-    const objectName: string = this.flags.sobject;
     const describe = await conn.describe(objectName);
-    const pascalObjectName = objectName.replace('__c', '').replace('_', '');
+    let typeContents = '';
 
-    let typeContents = `${header}\nimport { SObject } from \'./sobject\';`;
-
-    typeContents += `\n\nexport interface ${pascalObjectName} extends SObject {`;
+    typeContents += `\n\nexport interface ${objectName} extends SObject {`;
 
     describe.fields.forEach(field => {
-      let typeName;
+      let typeName: string;
       switch (field['type']) {
         case 'boolean':
           typeName = 'boolean';
@@ -108,10 +114,41 @@ export default class Org extends SfdxCommand {
           typeName = 'string';
       }
       typeContents += `\n  ${field['name']}: ${typeName};`;
+      if (field['type'] == 'reference') {
+          const refTypeName = field.referenceTo[0];
+          if(sObjects && sObjects.find(f=> f === refTypeName)){
+            //add it if its in our list
+            typeContents += `\n  ${field['relationshipName']}: ${refTypeName};`;
+          }
+      }
     });
     typeContents += '\n}\n';
 
-    const filePath = join(this.flags.outputdir, `${pascalObjectName.toLowerCase()}.ts`);
+    return typeContents
+  }
+
+  private async generateSObjectType() {
+    const objectName: string = this.flags.sobject;
+    let filePath = '';
+    let typeContents = `${header}\nimport { SObject } from \'./sobject\';`;
+    if(objectName){
+      const pascalObjectName = objectName.replace('__c', '').replace('_', '');
+      typeContents = await this.generateSObjectTypeContents(objectName)
+      filePath = join(this.flags.outputdir, `${pascalObjectName.toLowerCase()}.ts`);
+    } else if(this.flags.config) {
+      const buffer = await core.fs.readFile(this.flags.config);
+      let json = buffer.toString('utf8');
+      const {sobjects} = JSON.parse(json);
+      for (const s of sobjects) {
+        process.stdout.write(`Processing ...${s}`);
+        process.stdout.write("\n"); 
+        typeContents += await this.generateSObjectTypeContents(s, sobjects)
+      }
+      filePath = join(this.flags.outputdir, `sobjects.ts`);
+    } else {
+      process.stderr.write(`Please provide a -s or -c`);
+    }
+
     await core.fs.writeFile(filePath, typeContents);
     this.createdFiles.push(filePath);
   }
