@@ -145,9 +145,10 @@ export default class Org extends SfdxCommand {
         this.unmappedChildRelationships.add(childSObject);
         typeContents += `\n  ${childRelationshipName}?: Array<${childSObject}>;`;
       } else if(!childRelationshipName){
-        child['junctionReferenceTo'].forEach(j => {
-          typeContents += `\n  ${j}?: Array<any>;`;
-        });
+        //typeContents += `\n  ${childSObject}?: ${childSObject};`;
+        // child['junctionReferenceTo'].forEach(j => {
+        //   typeContents += `\n  ${j}?: Array<any>;`;
+        // });
     }
 
     });
@@ -168,17 +169,24 @@ export default class Org extends SfdxCommand {
       const buffer = await core.fs.readFile(this.flags.config);
       let json = buffer.toString('utf8');
       const {sobjects} = JSON.parse(json);
+      const promises: Array<Promise<string | void>> = [];
       for (const s of sobjects) {
         process.stdout.write(`Processing... ${s}`);
         process.stdout.write("\n"); 
-        typeContents += await this.generateSObjectTypeContents(s, sobjects)
+        promises.push(this.generateSObjectTypeContents(s, sobjects));
       }
+      process.stdout.write(`Writing to file...`);
+      await Promise.all(promises);
+      promises.forEach(p => {
+        p.then(result => {
+          typeContents += result;
+        });
+      })
+      await Promise.all(promises);
       typeContents += `\n// unmapped types:`;
-      Array.from(this.unmappedChildRelationships).forEach(unmappedType => {
+      Array.from(this.unmappedChildRelationships).sort().forEach(unmappedType => {
         typeContents += `\ntype ${unmappedType} = any; `;
       });
-
-
       filePath = join(this.flags.outputdir, `sobjects.ts`);
     } else {
       process.stderr.write(`Please provide a -s or -c`);
