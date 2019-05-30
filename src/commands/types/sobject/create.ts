@@ -26,8 +26,7 @@ const sobject = `${header}
 export type ID = string;
 
 export interface SObject {
-  Id: ID;
-  Name: string;
+  Id?: ID;
 }
 `;
 
@@ -101,6 +100,9 @@ export default class Org extends SfdxCommand {
     typeContents += `\n\nexport interface ${objectName} extends SObject {`;
 
     describe.fields.forEach(field => {
+      if(field['name'] == 'Id') {
+        return;
+      }
       let typeName: string;
       switch (field['type']) {
         case 'boolean':
@@ -113,13 +115,32 @@ export default class Org extends SfdxCommand {
         default:
           typeName = 'string';
       }
-      typeContents += `\n  ${field['name']}: ${typeName};`;
+      typeContents += `\n  ${field['name']}?: ${typeName};`;
       if (field['type'] == 'reference') {
-          const refTypeName = field.referenceTo[0];
-          if(sObjects && sObjects.find(f=> f === refTypeName)){
-            //add it if its in our list
-            typeContents += `\n  ${field['relationshipName']}: ${refTypeName};`;
+          let refTypeName;
+          field.referenceTo.forEach(r => {
+            if(sObjects && sObjects.find(f=> f === r)){
+              //add it if its in our list
+              refTypeName = refTypeName ? `${refTypeName} | ${r}` : r
+            }
+          });
+          if(refTypeName){
+            typeContents += `\n  ${field['relationshipName']}?: ${refTypeName};`;
           }
+      }
+    });
+    describe.childRelationships.forEach(child => {
+      const childSObject = child['childSObject'];
+      const childRelationshipName = child['relationshipName'];
+      if(sObjects && sObjects.find(f=> f === childSObject)){
+        if(childRelationshipName){
+          typeContents += `\n  ${childRelationshipName}?: Array<${childSObject}>;`;
+        } else{
+          //we have no name but a child relationship, not sure what name should be used here
+          // child['junctionReferenceTo'].forEach(j => {
+          //   typeContents += `\n  ${j}?: Array<${childSObject}>;`;
+          // });
+        }
       }
     });
     typeContents += '\n}\n';
