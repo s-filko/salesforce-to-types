@@ -22,12 +22,18 @@ const header = `
  */
 `;
 
-const sobject = `${header}
-export type ID = string;
+const sobject = `${header}\nimport { ID } from \'./sobjectTypes\';
 
 export interface SObject {
   Id?: ID;
 }
+`;
+
+
+const sobjectTypes = `${header}
+export type ID = String;
+export type DateString = String;
+export type PhoneString = String;
 `;
 
 export default class Org extends SfdxCommand {
@@ -64,10 +70,12 @@ export default class Org extends SfdxCommand {
   protected static requiresUsername = true;
 
   private createdFiles = [];
+  private unmappedChildRelationships = new Set<String>();
 
   public async run(): Promise<core.AnyJson> {
     await 
     await this.createBaseSObjectType();
+    await this.createSalesforceFieldTypes();
     await this.generateSObjectType();
 
     if (this.createdFiles.length > 0) {
@@ -85,13 +93,20 @@ export default class Org extends SfdxCommand {
 
   private async createBaseSObjectType() {
     const dir = await core.fs.readdir(this.flags.outputdir);
-    if (!some(dir, fileName => fileName === 'sobject.ts')) {
-      const filePath = join(this.flags.outputdir, 'sobject.ts');
-      await core.fs.writeFile(filePath, sobject);
-      this.createdFiles.push(filePath);
-    }
+    const filePath = join(this.flags.outputdir, 'sobject.ts');
+    await core.fs.writeFile(filePath, sobject);
+    this.createdFiles.push(filePath);
   }
-  private unmappedChildRelationships = new Set<String>();
+
+  private async createSalesforceFieldTypes() {
+    const dir = await core.fs.readdir(this.flags.outputdir);
+    const filePath = join(this.flags.outputdir, 'sobjectTypes.ts');
+    await core.fs.writeFile(filePath, sobjectTypes);
+    this.createdFiles.push(filePath);
+    return 
+  }
+
+
 
   private async generateSObjectTypeContents(objectName: string, sObjects?: Array<String>) {
     const conn = this.org.getConnection();
@@ -107,14 +122,28 @@ export default class Org extends SfdxCommand {
       let typeName: string;
       switch (field['type']) {
         case 'boolean':
-          typeName = 'boolean';
+          typeName = 'Boolean';
           break;
         case 'int':
         case 'double':
-          typeName = 'number';
+          typeName = 'Number';
+          break;
+        case 'date':
+        case 'datetime':
+          typeName = 'DateString';
+          break;
+        case 'phone':
+          typeName = 'PhoneString';
+          break;
+        case 'string':
+        case 'textarea':
+          typeName = 'String';
+          break;
+        case 'reference':
+          typeName = 'ID';
           break;
         default:
-          typeName = 'string';
+          typeName = `String //${field['type']}`;
       }
       typeContents += `\n  ${field['name']}?: ${typeName};`;
       if (field['type'] == 'reference') {
@@ -161,6 +190,7 @@ export default class Org extends SfdxCommand {
     const objectName: string = this.flags.sobject;
     let filePath = '';
     let typeContents = `${header}\nimport { SObject } from \'./sobject\';`;
+    typeContents += `\nimport { ID, DateString, PhoneString } from \'./sobjectTypes\';`;
     if(objectName){
       const pascalObjectName = objectName.replace('__c', '').replace('_', '');
       typeContents = await this.generateSObjectTypeContents(objectName)
