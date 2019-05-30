@@ -22,7 +22,7 @@ const header = `
  */
 `;
 
-const sobject = `${header}\nimport { ID } from \'./sobjectTypes\';
+const sobject = `${header}\nimport { ID } from \'./sobjectFieldTypes\';
 
 export interface SObject {
   Id?: ID;
@@ -30,7 +30,7 @@ export interface SObject {
 `;
 
 
-const sobjectTypes = `${header}
+const sobjectFieldTypes = `${header}
 export type ID = String;
 export type DateString = String;
 export type PhoneString = String;
@@ -100,8 +100,8 @@ export default class Org extends SfdxCommand {
 
   private async createSalesforceFieldTypes() {
     const dir = await core.fs.readdir(this.flags.outputdir);
-    const filePath = join(this.flags.outputdir, 'sobjectTypes.ts');
-    await core.fs.writeFile(filePath, sobjectTypes);
+    const filePath = join(this.flags.outputdir, 'sobjectFieldTypes.ts');
+    await core.fs.writeFile(filePath, sobjectFieldTypes);
     this.createdFiles.push(filePath);
     return 
   }
@@ -190,7 +190,7 @@ export default class Org extends SfdxCommand {
     const objectName: string = this.flags.sobject;
     let filePath = '';
     let typeContents = `${header}\nimport { SObject } from \'./sobject\';`;
-    typeContents += `\nimport { ID, DateString, PhoneString } from \'./sobjectTypes\';`;
+    typeContents += `\nimport { ID, DateString, PhoneString } from \'./sobjectFieldTypes\';`;
     if(objectName){
       const pascalObjectName = objectName.replace('__c', '').replace('_', '');
       typeContents = await this.generateSObjectTypeContents(objectName)
