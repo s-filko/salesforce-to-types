@@ -126,6 +126,7 @@ export default class Org extends SfdxCommand {
           break;
         case 'int':
         case 'double':
+        case 'currency':
           typeName = 'Number';
           break;
         case 'date':
