@@ -31,9 +31,10 @@ export interface SObject {
 
 
 const sobjectFieldTypes = `${header}
-export type ID = String;
-export type DateString = String;
-export type PhoneString = String;
+export type ID = string;
+export type DateString = string;
+export type PhoneString = string;
+export type ChildRecords<T> = { records: Array<T> };
 `;
 
 export default class Org extends SfdxCommand {
@@ -122,12 +123,12 @@ export default class Org extends SfdxCommand {
       let typeName: string;
       switch (field['type']) {
         case 'boolean':
-          typeName = 'Boolean';
+          typeName = 'boolean';
           break;
         case 'int':
         case 'double':
         case 'currency':
-          typeName = 'Number';
+          typeName = 'number';
           break;
         case 'date':
         case 'datetime':
@@ -138,13 +139,13 @@ export default class Org extends SfdxCommand {
           break;
         case 'string':
         case 'textarea':
-          typeName = 'String';
+          typeName = 'string';
           break;
         case 'reference':
           typeName = 'ID';
           break;
         default:
-          typeName = `String //${field['type']}`;
+          typeName = `string //${field['type']}`;
       }
       typeContents += `\n  ${field['name']}?: ${typeName};`;
       if (field['type'] == 'reference') {
@@ -165,10 +166,10 @@ export default class Org extends SfdxCommand {
       const childRelationshipName = child['relationshipName'];
       if(sObjects && sObjects.find(f=> f === childSObject)){
         if(childRelationshipName){
-          typeContents += `\n  ${childRelationshipName}?: Array<${childSObject}>;`;
+          typeContents += `\n  ${childRelationshipName}?: ChildRecords<${childSObject}>;`;
         } else{
           child['junctionReferenceTo'].forEach(j => {
-            typeContents += `\n  ${j}?: Array<${childSObject}>;`;
+            typeContents += `\n ${j}?: ChildRecords<${childSObject}>;`;
           });
         }
       } else if(childRelationshipName){
@@ -191,7 +192,7 @@ export default class Org extends SfdxCommand {
     const objectName: string = this.flags.sobject;
     let filePath = '';
     let typeContents = `${header}\nimport { SObject } from \'./sobject\';`;
-    typeContents += `\nimport { ID, DateString, PhoneString } from \'./sobjectFieldTypes\';`;
+    typeContents += `\nimport { ID, ChildRecords, DateString, PhoneString } from \'./sobjectFieldTypes\';`;
     if(objectName){
       const pascalObjectName = objectName.replace('__c', '').replace('_', '');
       typeContents = await this.generateSObjectTypeContents(objectName)
