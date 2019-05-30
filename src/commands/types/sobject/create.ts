@@ -91,6 +91,7 @@ export default class Org extends SfdxCommand {
       this.createdFiles.push(filePath);
     }
   }
+  private unmappedChildRelationships = new Set<String>();
 
   private async generateSObjectTypeContents(objectName: string, sObjects?: Array<String>) {
     const conn = this.org.getConnection();
@@ -136,15 +137,22 @@ export default class Org extends SfdxCommand {
         if(childRelationshipName){
           typeContents += `\n  ${childRelationshipName}?: Array<${childSObject}>;`;
         } else{
-          //we have no name but a child relationship, not sure what name should be used here
-          // child['junctionReferenceTo'].forEach(j => {
-          //   typeContents += `\n  ${j}?: Array<${childSObject}>;`;
-          // });
+          child['junctionReferenceTo'].forEach(j => {
+            typeContents += `\n  ${j}?: Array<${childSObject}>;`;
+          });
         }
-      }
+      } else if(childRelationshipName){
+        this.unmappedChildRelationships.add(childSObject);
+        typeContents += `\n  ${childRelationshipName}?: Array<${childSObject}>;`;
+      } else if(!childRelationshipName){
+        child['junctionReferenceTo'].forEach(j => {
+          typeContents += `\n  ${j}?: Array<any>;`;
+        });
+    }
+
     });
     typeContents += '\n}\n';
-
+    
     return typeContents
   }
 
@@ -161,10 +169,16 @@ export default class Org extends SfdxCommand {
       let json = buffer.toString('utf8');
       const {sobjects} = JSON.parse(json);
       for (const s of sobjects) {
-        process.stdout.write(`Processing ...${s}`);
+        process.stdout.write(`Processing... ${s}`);
         process.stdout.write("\n"); 
         typeContents += await this.generateSObjectTypeContents(s, sobjects)
       }
+      typeContents += `\n// unmapped types:`;
+      Array.from(this.unmappedChildRelationships).forEach(unmappedType => {
+        typeContents += `\ntype ${unmappedType} = any; `;
+      });
+
+
       filePath = join(this.flags.outputdir, `sobjects.ts`);
     } else {
       process.stderr.write(`Please provide a -s or -c`);
