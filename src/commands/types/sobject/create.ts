@@ -25,7 +25,7 @@ const header = `
 const sobject = `${header}\nimport { ID } from \'./sobjectFieldTypes\';
 
 export interface SObject {
-  Id?: ID;
+  Id: ID;
 }
 `;
 
@@ -109,13 +109,13 @@ export default class Org extends SfdxCommand {
 
 
 
-  private async generateSObjectTypeContents(objectName: string, sObjects?: Array<String>) {
+  private async generateSObjectTypeContents(objectName: string, sObjects?: Array<String>, specialChildrenToMap?: Array<String>) {
     const conn = this.org.getConnection();
     const describe = await conn.describe(objectName);
     let typeContents = '';
 
     typeContents += `\n\nexport interface ${objectName} extends SObject {`;
-
+    const specialChildrenToMapClone = Array.from(specialChildrenToMap);
     describe.fields.forEach(field => {
       if(field['name'] == 'Id') {
         return;
@@ -147,7 +147,7 @@ export default class Org extends SfdxCommand {
         default:
           typeName = `string //${field['type']}`;
       }
-      typeContents += `\n  ${field['name']}?: ${typeName};`;
+      typeContents += `\n  ${field['name']}: ${typeName};`;
       if (field['type'] == 'reference') {
           let refTypeName;
           field.referenceTo.forEach(r => {
@@ -157,7 +157,7 @@ export default class Org extends SfdxCommand {
             }
           });
           if(refTypeName){
-            typeContents += `\n  ${field['relationshipName']}?: ${refTypeName};`;
+            typeContents += `\n  ${field['relationshipName']}: ${refTypeName};`;
           }
       }
     });
@@ -166,24 +166,34 @@ export default class Org extends SfdxCommand {
       const childRelationshipName = child['relationshipName'];
       if(sObjects && sObjects.find(f=> f === childSObject)){
         if(childRelationshipName){
-          typeContents += `\n  ${childRelationshipName}?: ChildRecords<${childSObject}>;`;
+          typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}>;`;
         } else{
-          child['junctionReferenceTo'].forEach(j => {
-            typeContents += `\n ${j}?: ChildRecords<${childSObject}>;`;
-          });
+          if(child['junctionReferenceTo'].length > 0){
+            child['junctionReferenceTo'].forEach(j => {
+              typeContents += `\n ${j}: ChildRecords<${childSObject}>;`;
+            });
+          }else {
+            if(specialChildrenToMap){
+              const index = specialChildrenToMap.findIndex(f=> f === childSObject);
+              if (index > 0) {
+                specialChildrenToMap.splice(index, 1);
+                typeContents += `\n  ${childSObject}: ${childSObject};`;
+              }
+            }
+          }
         }
       } else if(childRelationshipName){
         this.unmappedChildRelationships.add(childSObject);
-        typeContents += `\n  ${childRelationshipName}?: Array<${childSObject}>;`;
+        typeContents += `\n  ${childRelationshipName}: Array<${childSObject}>;`;
       } else if(!childRelationshipName){
-        //typeContents += `\n  ${childSObject}?: ${childSObject};`;
-        // child['junctionReferenceTo'].forEach(j => {
-        //   typeContents += `\n  ${j}?: Array<any>;`;
-        // });
+        // if(specialChildrenToMap && specialChildrenToMap.find(f=> f === childSObject)){
+        //   typeContents += `\n  ${childSObject}: ${childSObject};`;
+        // }
     }
 
     });
-    typeContents += '\n}\n';
+    typeContents += '\n};\n'
+
     
     return typeContents
   }
@@ -200,12 +210,12 @@ export default class Org extends SfdxCommand {
     } else if(this.flags.config) {
       const buffer = await core.fs.readFile(this.flags.config);
       let json = buffer.toString('utf8');
-      const {sobjects} = JSON.parse(json);
+      const {sobjects, specialChildrenToMap} = JSON.parse(json);
       const promises: Array<Promise<string | void>> = [];
       for (const s of sobjects) {
         process.stdout.write(`Processing... ${s}`);
         process.stdout.write("\n"); 
-        promises.push(this.generateSObjectTypeContents(s, sobjects));
+        promises.push(this.generateSObjectTypeContents(s, sobjects, specialChildrenToMap));
       }
       process.stdout.write(`Writing to file...`);
       await Promise.all(promises);
