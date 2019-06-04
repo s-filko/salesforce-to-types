@@ -115,11 +115,12 @@ export default class Org extends SfdxCommand {
     let typeContents = '';
 
     typeContents += `\n\nexport interface ${objectName} extends SObject {`;
-    const specialChildrenToMapClone = Array.from(specialChildrenToMap);
+    const specialChildrenToMapClone = Array.from(specialChildrenToMap || []);
     describe.fields.forEach(field => {
       if(field['name'] == 'Id') {
         return;
       }
+    
       let typeName: string;
       switch (field['type']) {
         case 'boolean':
@@ -148,6 +149,9 @@ export default class Org extends SfdxCommand {
           typeName = `string //${field['type']}`;
       }
       typeContents += `\n  ${field['name']}: ${typeName};`;
+      if (field['calculated']) {
+        typeContents += ` //calculated`;
+      }
       if (field['type'] == 'reference') {
           let refTypeName;
           field.referenceTo.forEach(r => {
@@ -173,10 +177,10 @@ export default class Org extends SfdxCommand {
               typeContents += `\n ${j}: ChildRecords<${childSObject}>;`;
             });
           }else {
-            if(specialChildrenToMap){
-              const index = specialChildrenToMap.findIndex(f=> f === childSObject);
+            if(specialChildrenToMapClone){
+              const index = specialChildrenToMapClone.findIndex(f=> f === childSObject);
               if (index > 0) {
-                specialChildrenToMap.splice(index, 1);
+                specialChildrenToMapClone.splice(index, 1);
                 typeContents += `\n  ${childSObject}: ${childSObject};`;
               }
             }
