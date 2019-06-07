@@ -188,7 +188,7 @@ export default class Org extends SfdxCommand {
         }
       } else if(childRelationshipName){
         this.unmappedChildRelationships.add(childSObject);
-        typeContents += `\n  ${childRelationshipName}: Array<${childSObject}>;`;
+        typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}>;`;
       } else if(!childRelationshipName){
         // if(specialChildrenToMap && specialChildrenToMap.find(f=> f === childSObject)){
         //   typeContents += `\n  ${childSObject}: ${childSObject};`;
