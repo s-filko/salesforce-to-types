@@ -34,7 +34,8 @@ const sobjectFieldTypes = `${header}
 export type ID = string;
 export type DateString = string;
 export type PhoneString = string;
-export type ChildRecords<T> = { records: Array<T> };
+export type Child<TString> = { attributes: { type: TString } }
+export type ChildRecords<T, TString> = { records: Array<Partial<T> & Child<TString>> };
 `;
 
 export default class Org extends SfdxCommand {
@@ -170,11 +171,11 @@ export default class Org extends SfdxCommand {
       const childRelationshipName = child['relationshipName'];
       if(sObjects && sObjects.find(f=> f === childSObject)){
         if(childRelationshipName){
-          typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}>;`;
+          typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}, '${childSObject}'>;`;
         } else{
           if(child['junctionReferenceTo'].length > 0){
             child['junctionReferenceTo'].forEach(j => {
-              typeContents += `\n ${j}: ChildRecords<${childSObject}>;`;
+              typeContents += `\n ${j}: ChildRecords<${childSObject}, '${childSObject}'>;`;
             });
           }else {
             if(specialChildrenToMapClone){
@@ -188,7 +189,7 @@ export default class Org extends SfdxCommand {
         }
       } else if(childRelationshipName){
         this.unmappedChildRelationships.add(childSObject);
-        typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}>;`;
+        typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}, '${childSObject}'>;`;
       } else if(!childRelationshipName){
         // if(specialChildrenToMap && specialChildrenToMap.find(f=> f === childSObject)){
         //   typeContents += `\n  ${childSObject}: ${childSObject};`;
