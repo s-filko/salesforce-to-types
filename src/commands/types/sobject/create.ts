@@ -22,8 +22,9 @@ const header = `
  */
 `;
 
-const sobject = `${header}\nimport { ID } from \'./sobjectFieldTypes\';
+const sobject = `${header}\nimport { ID, Attribute } from \'./sobjectFieldTypes\';
 
+export type SObjectAttribute<TString> = SObject & Attribute<TString>;
 export interface SObject {
   Id: ID;
 }
@@ -34,8 +35,8 @@ const sobjectFieldTypes = `${header}
 export type ID = string;
 export type DateString = string;
 export type PhoneString = string;
-export type Child<TString> = { attributes: { type: TString } }
-export type ChildRecords<T, TString> = { records: Array<Partial<T> & Child<TString>> };
+export type Attribute<TString> = { attributes: { type: TString } }
+export type ChildRecords<T, TString> = { records: Array<Partial<T> & Attribute<TString>> };
 `;
 
 export default class Org extends SfdxCommand {
@@ -115,7 +116,7 @@ export default class Org extends SfdxCommand {
     const describe = await conn.describe(objectName);
     let typeContents = '';
 
-    typeContents += `\n\nexport interface ${objectName} extends SObject {`;
+    typeContents += `\n\nexport interface ${objectName} extends SObjectAttribute<'${objectName}'> {`;
     const specialChildrenToMapClone = Array.from(specialChildrenToMap || []);
     describe.fields.forEach(field => {
       if(field['name'] == 'Id') {
@@ -206,7 +207,7 @@ export default class Org extends SfdxCommand {
   private async generateSObjectType() {
     const objectName: string = this.flags.sobject;
     let filePath = '';
-    let typeContents = `${header}\nimport { SObject } from \'./sobject\';`;
+    let typeContents = `${header}\nimport { SObjectAttribute } from \'./sobject\';`;
     typeContents += `\nimport { ID, ChildRecords, DateString, PhoneString } from \'./sobjectFieldTypes\';`;
     if(objectName){
       const pascalObjectName = objectName.replace('__c', '').replace('_', '');
