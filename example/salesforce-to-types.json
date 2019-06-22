@@ -1,0 +1,7 @@
+{
+    "sobjects": [
+        "Account",
+        "Contact",
+        "Opportunity"
+    ]
+}
