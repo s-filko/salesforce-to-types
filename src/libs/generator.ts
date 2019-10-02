@@ -29,7 +29,7 @@ export interface SObject {
 
 const sobjectFieldTypes = `${header}
 export type ID = string;
-export type DateString = string;
+export type DateString = string | null;
 export type PhoneString = string;
 export type Attribute<TString> = { attributes: { type: TString } }
 export type ChildRecords<T, TString> = { records: Array<Partial<T> & Attribute<TString>> };
@@ -41,7 +41,7 @@ export class Generator {
     unmappedChildRelationships: Set<String>;
     org: Org
     ux: UX
-    constructor(params: { org, flags, createdFiles, ux }) {
+    constructor(params: { org, flags, createdFiles?, ux }) {
         this.org = params.org;
         this.ux = params.ux;
         this.flags = params.flags;
