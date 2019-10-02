@@ -49,7 +49,7 @@ export default class Org extends SfdxCommand {
   protected static requiresUsername = true;
 
 
-  public async run(): Promise<core.AnyJson> {
+  public async run(): Promise<any> {
     const generator = new Generator({flags: this.flags, org: this.org, ux: this.ux });
     const {createdFiles} = await generator.generate();
     if (createdFiles.length > 0) {
