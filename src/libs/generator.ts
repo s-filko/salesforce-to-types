@@ -123,7 +123,7 @@ export class Generator {
             }
 
             if (field['type'] == 'picklist' && field.picklistValues.length > 0) {
-                typeName = field.picklistValues.map(p => `'${p.value}'`).join(' | ')
+                typeName = field.picklistValues.map(p => `\`${p.value}\``).join(' | ')
             }
 
             typeContents += `\n  ${field['name']}: ${typeName};`;
