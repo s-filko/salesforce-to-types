@@ -190,6 +190,16 @@ export class Generator {
         this.createdFiles.push(filePath);
     }
 
+    generateSObjectKeyToType(sobjects: string[]){
+        let typeContents = `// key map to types:`;
+        typeContents += `\n export interface KeyMapSObjects {`
+        for (const s of sobjects) {
+            typeContents += `\n\t ${s}: ${s}`;
+        }
+        typeContents += `\n }`
+        return typeContents;
+    }
+
     private async generateSObjectsConfig() {
         let conn = this.org.getConnection();
         let typeContents = this.generateFileHeader();
@@ -211,6 +221,9 @@ export class Generator {
         Array.from(this.unmappedChildRelationships).sort().forEach(unmappedType => {
             typeContents += `\ntype ${unmappedType} = any; `;
         });
+
+        typeContents += this.generateSObjectKeyToType(sobjects);
+
         let filePath = join(this.flags.outputdir, `sobjects.ts`);
 
         await core.fs.writeFile(filePath, typeContents);
