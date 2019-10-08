@@ -121,6 +121,11 @@ export class Generator {
                 default:
                     typeName = `string //${field['type']}`;
             }
+
+            if (field['type'] == 'picklist' && field.picklistValues.length > 0) {
+                typeName = field.picklistValues.map(p => `'${p.value}'`).join(' | ')
+            }
+
             typeContents += `\n  ${field['name']}: ${typeName};`;
             if (field['calculated']) {
                 typeContents += ` //calculated`;
@@ -137,7 +142,11 @@ export class Generator {
                     typeContents += `\n  ${field['relationshipName']}: ${refTypeName};`;
                 }
             }
+
+           
         });
+
+        //child relationships
         describe.childRelationships.forEach(child => {
             const childSObject = child['childSObject'];
             const childRelationshipName = child['relationshipName'];
@@ -168,7 +177,19 @@ export class Generator {
                 // }
             }
         });
+
         typeContents += '\n};\n'
+
+        //record types
+        typeContents += `\n\nexport type ${objectName}RecordTypes = {`;
+        describe.recordTypeInfos.forEach(recordType => {
+            if(recordType.master){
+                return;
+            }
+            typeContents += `\n\t${recordType.developerName}: string,`
+        });
+        typeContents += '\n};\n'
+
         return typeContents
     }
 
@@ -192,11 +213,11 @@ export class Generator {
 
     generateSObjectKeyToType(sobjects: string[]){
         let typeContents = `// key map to types:`;
-        typeContents += `\n export interface KeyMapSObjects {`
+        typeContents += `\nexport interface KeyMapSObjects {`
         for (const s of sobjects) {
-            typeContents += `\n\t ${s}: ${s}`;
+            typeContents += `\n\t${s}: ${s}`;
         }
-        typeContents += `\n }`
+        typeContents += `\n}`
         return typeContents;
     }
 
