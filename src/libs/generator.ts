@@ -33,6 +33,7 @@ export type DateString = string | null;
 export type PhoneString = string;
 export type Attribute<TString> = { attributes: { type: TString } }
 export type ChildRecords<T, TString> = { records: Array<Partial<T> & Attribute<TString>> };
+export type RecordType = { Id: string; Name: string; DeveloperName: string; };
 `;
 
 export class Generator {
@@ -143,7 +144,7 @@ export class Generator {
                 }
             }
 
-           
+
         });
 
         //child relationships
@@ -186,7 +187,7 @@ export class Generator {
             if(recordType.master){
                 return;
             }
-            typeContents += `\n\t${recordType.developerName}: string,`
+            typeContents += `\n\t${recordType.developerName}: RecordType,`
         });
         typeContents += '\n};\n'
 
@@ -196,7 +197,7 @@ export class Generator {
 
     generateFileHeader = () => {
         let typeContents = `${header}\nimport { SObjectAttribute } from \'./sobject\';`;
-        typeContents += `\nimport { ID, ChildRecords, DateString, PhoneString } from \'./sobjectFieldTypes\';`;
+        typeContents += `\nimport { ID, ChildRecords, DateString, PhoneString, RecordType } from \'./sobjectFieldTypes\';`;
         return typeContents;
     }
 
