@@ -31,6 +31,7 @@ const sobjectFieldTypes = `${header}
 export type ID = string;
 export type DateString = string | null;
 export type PhoneString = string;
+export type PercentString = string | number;
 export type Attribute<TString> = { attributes: { type: TString } }
 export type ChildRecords<T, TString> = { records: Array<Partial<T> & Attribute<TString>> };
 export type RecordType = { Id: string; Name: string; DeveloperName: string; };
@@ -119,6 +120,9 @@ export class Generator {
                 case 'reference':
                     typeName = 'ID';
                     break;
+              case 'percent':
+                  typeName = 'PercentString';
+                  break;
                 default:
                     typeName = `string //${field['type']}`;
             }
@@ -197,7 +201,7 @@ export class Generator {
 
     generateFileHeader = () => {
         let typeContents = `${header}\nimport { SObjectAttribute } from \'./sobject\';`;
-        typeContents += `\nimport { ID, ChildRecords, DateString, PhoneString, RecordType } from \'./sobjectFieldTypes\';`;
+        typeContents += `\nimport { ID, ChildRecords, DateString, PhoneString, PercentString, RecordType } from \'./sobjectFieldTypes\';`;
         return typeContents;
     }
 
