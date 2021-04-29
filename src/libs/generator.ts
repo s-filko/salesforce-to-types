@@ -1,5 +1,4 @@
-import { core, flags, SfdxCommand } from '@salesforce/command';
-import { Connection } from 'jsforce';
+import { core } from '@salesforce/command';
 import { OutputFlags } from '@oclif/parser';
 import { join } from 'path';
 import { Org, UX } from '@salesforce/core';
@@ -14,9 +13,11 @@ const header = `
  * changes to that plugin then regenerate these files.
  *
  */
-`;
+`.trim();
 
-const sobject = `${header}\nimport { ID, Attribute } from \'./sobjectFieldTypes\';
+const sobject = `${header}
+
+import { ID, Attribute } from './sobject-field-types';
 
 export type SObjectAttribute<TString> = SObject & Attribute<TString>;
 export interface SObject {
@@ -24,8 +25,16 @@ export interface SObject {
 }
 `;
 
+const constructor = `
+  constructor(data = {}) {
+    super();
+    super.setValues(data);
+  }
+`;
+
 
 const sobjectFieldTypes = `${header}
+
 export type ID = string;
 export type DateString = string | null;
 export type PhoneString = string;
@@ -37,8 +46,8 @@ export type RecordType = { Id: string; Name: string; DeveloperName: string; };
 
 export class Generator {
   flags: OutputFlags<any>;
-;
   createdFiles: Array<String> = [];
+  globalPicklists: {[picklistName: string]: string[]} = {};
   unmappedChildRelationships: Set<String>;
   org: Org
   ux: UX
@@ -47,7 +56,7 @@ export class Generator {
     this.org = params.org;
     this.ux = params.ux;
     this.flags = params.flags;
-    this.createdFiles = this.createdFiles;
+    this.createdFiles = params.createdFiles || this.createdFiles;
     this.unmappedChildRelationships = new Set<String>();
   }
 
@@ -69,28 +78,33 @@ export class Generator {
 
   private async createBaseSObjectType() {
     const dir = await core.fs.readdir(this.flags.outputdir);
-    const filePath = join(this.flags.outputdir, 'sobject.ts');
+    const filePath = join(this.flags.outputdir, 'sobject-model.ts');
     await core.fs.writeFile(filePath, sobject);
     this.createdFiles.push(filePath);
   }
 
   private async createSalesforceFieldTypes() {
     const dir = await core.fs.readdir(this.flags.outputdir);
-    const filePath = join(this.flags.outputdir, 'sobjectFieldTypes.ts');
+    const filePath = join(this.flags.outputdir, 'sobject-field-types.ts');
     await core.fs.writeFile(filePath, sobjectFieldTypes);
     this.createdFiles.push(filePath);
     return
   }
 
-  generateSObjectTypeContents = async (objectName: string, sObjects?: Array<String>, specialChildrenToMap?: Array<String>) => {
+  generateSObjectTypeContents = async (objectName: string, sObjectsConfigs?: SobjectConfigurations, globalPicklistFields: string[] = []) => {
     let connection = this.org.getConnection();
     const describe = await connection.describe(objectName);
-    let typeContents = '';
+    const sObjects = Object.keys(sObjectsConfigs);
+    const sObjectConf = sObjectsConfigs[objectName];
+    let typeContents = '\n\n';
+    const picklists: {[picklistName: string]: string[]} = {};
 
-    typeContents += `\n\nexport interface ${objectName} extends SObjectAttribute<'${objectName}'> {`;
-    const specialChildrenToMapClone = Array.from(specialChildrenToMap || []);
+    const isFieldIgnored = (fieldName) => sObjectConf.fields && !sObjectConf.fields.includes(fieldName)
+
+    typeContents += `export class ${objectName} extends SObjectBase<'${objectName}'> {`;
+    // const specialChildrenToMapClone = Array.from(specialChildrenToMap || []);
     describe.fields.forEach(field => {
-      if (field['name'] == 'Id') {
+      if (field['name'] == 'Id' || isFieldIgnored(field['name']) ) {
         return;
       }
 
@@ -122,85 +136,132 @@ export class Generator {
           typeName = 'PercentString';
           break;
         default:
-          typeName = `string //${field['type']}`;
+          typeName = `string /* ${field['type']} */`;
       }
 
-      if (field['type'] == 'picklist' && field.picklistValues.length > 0) {
-        typeName = field.picklistValues.map(p => `\`${p.value}\``).join(' | ')
-      }
+      if (field['type'] == 'picklist' && field.picklistValues.length) {
+        const isCreateEnum = sObjectConf.picklistFields && sObjectConf.picklistFields.length && sObjectConf.picklistFields.includes(field.name);
+        const isCreateGlobalEnum = globalPicklistFields.length && globalPicklistFields.includes(field.name);
 
-      typeContents += `\n  ${field['name']}: ${typeName};`;
-      if (field['calculated']) {
-        typeContents += ` //calculated`;
-      }
-      if (field['type'] == 'reference') {
-        let refTypeName;
-        field.referenceTo.forEach(r => {
-          if (sObjects && sObjects.find(f => f === r)) {
-            //add it if its in our list
-            refTypeName = refTypeName ? `${refTypeName} | ${r}` : r
-          }
-        });
-        if (refTypeName) {
-          typeContents += `\n  ${field['relationshipName']}: ${refTypeName};`;
+        if(isCreateGlobalEnum && !this.globalPicklists.hasOwnProperty(field.name)) { // Add and use first picklist value
+          this.globalPicklists[field.name] = field.picklistValues.map(p => p.value);
+        }
+
+        if(isCreateEnum) {
+          typeName = objectName + field.name;
+          picklists[typeName] = field.picklistValues.map(p => p.value);
+        } else if(isCreateGlobalEnum) {
+          typeName = typeName || field.name;
+        } else {
+          typeName = field.picklistValues.map(p => `'${p.value}'`).join(' | ')
         }
       }
 
+      typeContents += `\n  ${field['name']}: ${typeName} = undefined;`;
 
+      if (field['calculated']) {
+        typeContents += ` // calculated`;
+      }
+
+      // REFERENCES
+      // if (field['type'] == 'reference') {
+      //   let refTypeName;
+      //   field.referenceTo.forEach(r => {
+      //     if (sObjects && sObjects.find(f => f === r)) {
+      //       //add it if its in our list
+      //       refTypeName = refTypeName ? `${refTypeName} | ${r}` : r
+      //     }
+      //   });
+      //   if (refTypeName) {
+      //     typeContents += `\n  ${field['relationshipName']}: ${refTypeName};`;
+      //   }
+      // }
     });
 
     //child relationships
-    describe.childRelationships.forEach(child => {
-      const childSObject = child['childSObject'];
-      const childRelationshipName = child['relationshipName'];
-      if (sObjects && sObjects.find(f => f === childSObject)) {
-        if (childRelationshipName) {
-          typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}, '${childSObject}'>;`;
-        } else {
-          if (child['junctionReferenceTo'].length > 0) {
-            child['junctionReferenceTo'].forEach(j => {
-              typeContents += `\n ${j}: ChildRecords<${childSObject}, '${childSObject}'>;`;
-            });
-          } else {
-            if (specialChildrenToMapClone) {
-              const index = specialChildrenToMapClone.findIndex(f => f === childSObject);
-              if (index > 0) {
-                specialChildrenToMapClone.splice(index, 1);
-                typeContents += `\n  ${childSObject}: ${childSObject};`;
-              }
-            }
-          }
-        }
-      } else if (childRelationshipName) {
-        this.unmappedChildRelationships.add(childSObject);
-        typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}, '${childSObject}'>;`;
-      } else if (!childRelationshipName) {
-        // if(specialChildrenToMap && specialChildrenToMap.find(f=> f === childSObject)){
-        //   typeContents += `\n  ${childSObject}: ${childSObject};`;
-        // }
-      }
-    });
+    // describe.childRelationships.forEach(child => {
+    //   const childSObject = child['childSObject'];
+    //   const childRelationshipName = child['relationshipName'];
+    //   if (sObjects && sObjects.find(f => f === childSObject)) {
+    //     if (childRelationshipName) {
+    //       typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}, '${childSObject}'>;`;
+    //     } else {
+    //       if (child['junctionReferenceTo'].length > 0) {
+    //         child['junctionReferenceTo'].forEach(j => {
+    //           typeContents += `\n ${j}: ChildRecords<${childSObject}, '${childSObject}'>;`;
+    //         });
+    //       } else {
+    //         if (specialChildrenToMapClone) {
+    //           const index = specialChildrenToMapClone.findIndex(f => f === childSObject);
+    //           if (index > 0) {
+    //             specialChildrenToMapClone.splice(index, 1);
+    //             typeContents += `\n  ${childSObject}: ${childSObject};`;
+    //           }
+    //         }
+    //       }
+    //     }
+    //   } else if (childRelationshipName) {
+    //     this.unmappedChildRelationships.add(childSObject);
+    //     typeContents += `\n  ${childRelationshipName}: ChildRecords<${childSObject}, '${childSObject}'>;`;
+    //   } else if (!childRelationshipName) {
+    //     // if(specialChildrenToMap && specialChildrenToMap.find(f=> f === childSObject)){
+    //     //   typeContents += `\n  ${childSObject}: ${childSObject};`;
+    //     // }
+    //   }
+    // });
 
-    typeContents += '\n};\n'
+    // add constructor
+    typeContents += '\n' + constructor;
+
+    if (sObjectConf.createFields) {
+      typeContents += '\n' + this.generateFieldsList('Create', sObjectConf.createFields);
+    }
+
+    if (sObjectConf.updateFields) {
+      typeContents += '\n' + this.generateFieldsList('Update', sObjectConf.updateFields);
+    }
+
+    typeContents += '}\n'
+
+    // Picklist enums
+    typeContents += this.generatePicklists(picklists);
 
     //record types
-    typeContents += `\n\nexport type ${objectName}RecordTypes = {`;
+    typeContents += `\n\nexport interface ${objectName}RecordTypes {`;
     describe.recordTypeInfos.forEach(recordType => {
       if (recordType.master) {
         return;
       }
-      typeContents += `\n\t${recordType.developerName}: RecordType,`
+      typeContents += `\n  ${recordType.developerName}: RecordType;`
     });
-    typeContents += '\n};\n'
+    typeContents += '\n}'
 
     return typeContents
   }
 
+  generatePicklists(picklists: {[picklistName: string]: string[]}) {
+    const names = Object.keys(picklists);
+    if(!names) {
+      return '';
+    }
+
+    return names.map(picklistName => {
+      let enumContent = `\nexport enum ${picklistName} {\n`;
+      enumContent += picklists[picklistName].map(value => `  ${this.formatPropertyName(value)} = '${value}'`).join(',\n');
+      enumContent += '\n}';
+      return enumContent
+    }).join('\n');
+  }
+
 
   generateFileHeader = () => {
-    let typeContents = `${header}\nimport { SObjectAttribute } from \'./sobject\';`;
-    typeContents += `\nimport { ID, ChildRecords, DateString, PhoneString, PercentString, RecordType } from \'./sobjectFieldTypes\';`;
-    return typeContents;
+    let typeContents = [header + '\n'];
+    typeContents.push(`/* tslint:disable:max-line-length */`);
+    typeContents.push(`/* tslint:disable:variable-name */`);
+    typeContents.push(`import { SObjectBase } from './s-object-base';`);
+    typeContents.push(`import { ID, ChildRecords, DateString, PhoneString, PercentString, RecordType } from './sobject-field-types';`);
+
+    return typeContents.join('\n');
   }
 
   generateSObject = async () => {
@@ -214,11 +275,11 @@ export class Generator {
     this.createdFiles.push(filePath);
   }
 
-  generateSObjectKeyToType(sobjects: string[]) {
+  generateSObjectKeyToType(sobjects: SobjectConfigurations) {
     let typeContents = `// key map to types:`;
-    typeContents += `\nexport interface KeyMapSObjects {`
-    for (const s of sobjects) {
-      typeContents += `\n\t${s}: ${s}`;
+    typeContents += `\n\nexport interface KeyMapSObjects {`
+    for (const s of Object.keys(sobjects)) {
+      typeContents += `\n  ${s}: ${s}`;
     }
     typeContents += `\n}`
     return typeContents;
@@ -227,12 +288,14 @@ export class Generator {
   private async generateSObjectsConfig() {
     let conn = this.org.getConnection();
     let typeContents = this.generateFileHeader();
-    const {sobjects, specialChildrenToMap} = await this.readFile();
+    const {sobjects, specialChildrenToMap, globalPicklistFields} = await this.readFile();
     const promises: Array<Promise<string | void>> = [];
-    for (const s of sobjects) {
-      this.ux.log(`Processing... ${s}`);
-      promises.push(this.generateSObjectTypeContents(s, sobjects, specialChildrenToMap));
+
+    for (const key of Object.keys(sobjects)) {
+      this.ux.log(`Processing... ${key}`);
+      promises.push(this.generateSObjectTypeContents(key, sobjects, globalPicklistFields));
     }
+
     this.ux.log(`Writing to file...`);
     await Promise.all(promises); // hack to get consistent file order
     promises.forEach(p => {
@@ -247,6 +310,9 @@ export class Generator {
     });
 
     typeContents += this.generateSObjectKeyToType(sobjects);
+    typeContents += '\n';
+    typeContents += this.generatePicklists(this.globalPicklists);
+    typeContents += '\n';
 
     let filePath = join(this.flags.outputdir, `sobjects.ts`);
 
@@ -254,11 +320,18 @@ export class Generator {
     this.createdFiles.push(filePath);
   }
 
+  generateFieldsList(type: 'Create' | 'Update' | 'Delete', fields: string[]) {
+    return `  get${type}Fields() {\n    return [${fields.map(fieldName => `'${fieldName}'`).join(', ')}]\n  }\n`;
+  }
 
-  async readFile(): Promise<IConfig> {
+
+  /**
+   * Returns configuration object
+   */
+  async readFile(): Promise<Configuration> {
     const buffer = await core.fs.readFile(this.flags.config);
     let json = buffer.toString('utf8');
-    let jsonParsed: IConfig;
+    let jsonParsed: Configuration;
     try {
       jsonParsed = JSON.parse(json);
     } catch (ex) {
@@ -273,10 +346,21 @@ export class Generator {
     return jsonParsed;
   }
 
+  private formatPropertyName(name: string) {
+    return name.replace(/\s|-/g, '_').toUpperCase()
+  }
 }
 
-
-interface IConfig {
-  sobjects: Array<string>,
+interface Configuration {
+  sobjects: SobjectConfigurations,
   specialChildrenToMap: Array<string>,
+  globalPicklistFields: string[];
+}
+type SobjectConfigurations = {[sObjectName: string]: SobjectConfig};
+
+interface SobjectConfig {
+  fields: string[];
+  createFields: string[];
+  updateFields: string[];
+  picklistFields?:  string[];
 }
