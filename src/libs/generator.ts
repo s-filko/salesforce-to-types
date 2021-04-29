@@ -178,6 +178,12 @@ export class Generator {
       // }
     });
 
+    const soupLocalFields = this.getSoupLocalFields(sObjectConf.fields, describe.fields.map(field => field.name));
+    if(soupLocalFields.length) {
+      typeContents += '\n\n  /* Soup local fields */';
+      typeContents += '\n  ' + soupLocalFields.map(fieldName => `['${fieldName}'] = undefined;`).join('\n  ');
+    }
+
     //child relationships
     // describe.childRelationships.forEach(child => {
     //   const childSObject = child['childSObject'];
@@ -212,6 +218,10 @@ export class Generator {
 
     // add constructor
     typeContents += '\n' + constructor;
+
+    // overrides getAllFields() method
+    typeContents += this.generateGetAllFieldsMethod(soupLocalFields);
+
 
     if (sObjectConf.createFields) {
       typeContents += '\n' + this.generateFieldsList('Create', sObjectConf.createFields);
@@ -253,6 +263,27 @@ export class Generator {
     }).join('\n');
   }
 
+  getSoupLocalFields(fields: string[], sObjectFields: string[]) {
+    if(!fields || !fields.length) {
+      return [];
+    }
+
+    return fields.filter(field => !sObjectFields.includes(field));
+  }
+
+  generateGetAllFieldsMethod(parentFields: string[]) {
+    if(!parentFields.length) {
+      return '';
+    }
+    let methodContent = '';
+    const fieldsStr = parentFields.map(field => `'${field}'`).join(', ');
+    methodContent +=`\n  getAllFields() {`;
+    methodContent +=`\n    const ignoreFields = [${fieldsStr}];`;
+    methodContent +=`\n    return super.getAllFields().filter(fieldName => !ignoreFields.includes(fieldName));`;
+    methodContent +=`\n  }\n`;
+
+    return methodContent;
+  }
 
   generateFileHeader = () => {
     let typeContents = [header + '\n'];
@@ -276,8 +307,8 @@ export class Generator {
   }
 
   generateSObjectKeyToType(sobjects: SobjectConfigurations) {
-    let typeContents = `// key map to types:`;
-    typeContents += `\n\nexport interface KeyMapSObjects {`
+    let typeContents = `\n\n// key map to types:`;
+    typeContents += `\nexport interface KeyMapSObjects {`
     for (const s of Object.keys(sobjects)) {
       typeContents += `\n  ${s}: ${s}`;
     }
@@ -304,14 +335,20 @@ export class Generator {
       });
     })
     await Promise.all(promises);
-    typeContents += `\n// unmapped types:`;
-    Array.from(this.unmappedChildRelationships).sort().forEach(unmappedType => {
-      typeContents += `\ntype ${unmappedType} = any; `;
-    });
+
+    if(this.unmappedChildRelationships.size) {
+      typeContents += `\n// unmapped types:`;
+      Array.from(this.unmappedChildRelationships).sort().forEach(unmappedType => {
+        typeContents += `\ntype ${unmappedType} = any; `;
+      });
+    }
 
     typeContents += this.generateSObjectKeyToType(sobjects);
-    typeContents += '\n';
-    typeContents += this.generatePicklists(this.globalPicklists);
+    if(Object.keys(this.globalPicklists).length) {
+      typeContents += '\n\n';
+      typeContents += '// global picklists';
+      typeContents += this.generatePicklists(this.globalPicklists);
+    }
     typeContents += '\n';
 
     let filePath = join(this.flags.outputdir, `sobjects.ts`);
