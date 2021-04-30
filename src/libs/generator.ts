@@ -78,7 +78,7 @@ export class Generator {
 
   private async createBaseSObjectType() {
     const dir = await core.fs.readdir(this.flags.outputdir);
-    const filePath = join(this.flags.outputdir, 'sobject-model.ts');
+    const filePath = join(this.flags.outputdir, 'sobject.ts');
     await core.fs.writeFile(filePath, sobject);
     this.createdFiles.push(filePath);
   }
@@ -237,14 +237,16 @@ export class Generator {
     typeContents += this.generatePicklists(picklists);
 
     //record types
-    typeContents += `\n\nexport interface ${objectName}RecordTypes {`;
-    describe.recordTypeInfos.forEach(recordType => {
-      if (recordType.master) {
-        return;
-      }
-      typeContents += `\n  ${recordType.developerName}: RecordType;`
-    });
-    typeContents += '\n}'
+    if(describe.recordTypeInfos.length) {
+      typeContents += `\n\nexport interface ${objectName}RecordTypes {`;
+      describe.recordTypeInfos.forEach(recordType => {
+        if (recordType.master) {
+          return;
+        }
+        typeContents += `\n  ${recordType.developerName}: RecordType;`
+      });
+      typeContents += '\n}'
+    }
 
     return typeContents
   }
@@ -289,7 +291,7 @@ export class Generator {
     let typeContents = [header + '\n'];
     typeContents.push(`/* tslint:disable:max-line-length */`);
     typeContents.push(`/* tslint:disable:variable-name */`);
-    typeContents.push(`import { SObjectBase } from './s-object-base';`);
+    typeContents.push(`import { SObjectBase } from '../s-object-base';`);
     typeContents.push(`import { ID, ChildRecords, DateString, PhoneString, PercentString, RecordType } from './sobject-field-types';`);
 
     return typeContents.join('\n');
@@ -351,7 +353,7 @@ export class Generator {
     }
     typeContents += '\n';
 
-    let filePath = join(this.flags.outputdir, `sobjects.ts`);
+    let filePath = join(this.flags.outputdir, `sobjects.entity.ts`);
 
     await core.fs.writeFile(filePath, typeContents);
     this.createdFiles.push(filePath);
