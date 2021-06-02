@@ -101,7 +101,10 @@ export class Generator {
 
     const isFieldIgnored = (fieldName) => sObjectConf.fields && !sObjectConf.fields.includes(fieldName)
 
-    typeContents += `export class ${objectName} extends SObjectBase<'${objectName}'> {`;
+    typeContents += `export class ${objectName} extends SObjectBase<'${objectName}'> implements LayerObject {`;
+
+    typeContents += `\n  static sObjectFields = [${sObjectConf.fields.map(f => `'${f}'`).join(', ')}];\n`;
+
     // const specialChildrenToMapClone = Array.from(specialChildrenToMap || []);
     describe.fields.forEach(field => {
       if (field['name'] == 'Id' || isFieldIgnored(field['name']) ) {
@@ -157,7 +160,7 @@ export class Generator {
         }
       }
 
-      typeContents += `\n  ${field['name']}: ${typeName} = undefined;`;
+      typeContents += `\n  ${field['name']}: ${typeName};`;
 
       if (field['calculated']) {
         typeContents += ` // calculated`;
@@ -220,8 +223,9 @@ export class Generator {
     typeContents += '\n' + constructor;
 
     // overrides getAllFields() method
-    typeContents += this.generateGetAllFieldsMethod(soupLocalFields);
+    // typeContents += this.generateGetAllFieldsMethod(sObjectConf.fields, soupLocalFields);
 
+    typeContents += `\n  getAllFields() {\n    return [...super.getAllFields(), ...${objectName}.sObjectFields];\n  }\n`;
 
     if (sObjectConf.createFields) {
       typeContents += '\n' + this.generateFieldsList('Create', sObjectConf.createFields);
@@ -273,15 +277,16 @@ export class Generator {
     return fields.filter(field => !sObjectFields.includes(field));
   }
 
-  generateGetAllFieldsMethod(parentFields: string[]) {
-    if(!parentFields.length) {
-      return '';
+  generateGetAllFieldsMethod(allFields: string[], parentFields: string[]) {
+    if(parentFields.length) {
+
     }
+    const filteredFields = parentFields.length ? allFields.filter(fieldName => !parentFields.includes(fieldName)) : allFields;
     let methodContent = '';
-    const fieldsStr = parentFields.map(field => `'${field}'`).join(', ');
+    const fieldsStr = filteredFields.map(field => `'${field}'`).join(', ');
     methodContent +=`\n  getAllFields() {`;
-    methodContent +=`\n    const ignoreFields = [${fieldsStr}];`;
-    methodContent +=`\n    return super.getAllFields().filter(fieldName => !ignoreFields.includes(fieldName));`;
+    methodContent +=`\n    const parentFields = [${fieldsStr}];`;
+    methodContent +=`\n    return super.getAllFields().filter(fieldName => !parentFields.includes(fieldName));`;
     methodContent +=`\n  }\n`;
 
     return methodContent;
@@ -291,7 +296,9 @@ export class Generator {
     let typeContents = [header + '\n'];
     typeContents.push(`/* tslint:disable:max-line-length */`);
     typeContents.push(`/* tslint:disable:variable-name */`);
+    typeContents.push(`/* tslint:disable:class-name */`);
     typeContents.push(`import { SObjectBase } from '../s-object-base';`);
+    typeContents.push(`import { LayerObject } from './layer-object';`);
     typeContents.push(`import { ID, ChildRecords, DateString, PhoneString, PercentString, RecordType } from './sobject-field-types';`);
 
     return typeContents.join('\n');
@@ -313,6 +320,16 @@ export class Generator {
     typeContents += `\nexport interface KeyMapSObjects {`
     for (const s of Object.keys(sobjects)) {
       typeContents += `\n  ${s}: ${s}`;
+    }
+    typeContents += `\n}`
+    return typeContents;
+  }
+
+  generateSObjectsMapEnum(sobjects: SobjectConfigurations) {
+    let typeContents = `\n\n// sObjects map`;
+    typeContents += `\nexport const SObjectsMap = {`
+    for (const s of Object.keys(sobjects)) {
+      typeContents += `\n  ${s},`;
     }
     typeContents += `\n}`
     return typeContents;
@@ -346,6 +363,9 @@ export class Generator {
     }
 
     typeContents += this.generateSObjectKeyToType(sobjects);
+    typeContents += this.generateSObjectsMapEnum(sobjects);
+    typeContents += '\n\nexport type SObjectName = keyof KeyMapSObjects;';
+
     if(Object.keys(this.globalPicklists).length) {
       typeContents += '\n\n';
       typeContents += '// global picklists';
@@ -361,6 +381,15 @@ export class Generator {
 
   generateFieldsList(type: 'Create' | 'Update' | 'Delete', fields: string[]) {
     return `  get${type}Fields() {\n    return [${fields.map(fieldName => `'${fieldName}'`).join(', ')}]\n  }\n`;
+  }
+
+  generateSObjectNameType(sobjects: SobjectConfigurations): string {
+    const sObjectsNamesList = Object.keys(sobjects).sort();
+    if(!sObjectsNamesList || !sObjectsNamesList.length) {
+      return '';
+    }
+
+    return '\n\nexport type SObjectName = ' + sObjectsNamesList.map(name => `'${name}'`).join(' | ') + ';';
   }
 
 
