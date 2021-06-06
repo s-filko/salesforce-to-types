@@ -41,7 +41,7 @@ export type PhoneString = string;
 export type PercentString = string | number;
 export type Attribute<TString> = { attributes: { type: TString } }
 export type ChildRecords<T, TString> = { records: Array<Partial<T> & Attribute<TString>> };
-export type RecordType = { Id: string; Name: string; DeveloperName: string; };
+\/\/ export type RecordType = { Id: string; Name: string; DeveloperName: string; };
 `;
 
 export class Generator {
@@ -156,7 +156,7 @@ export class Generator {
         } else if(isCreateGlobalEnum) {
           typeName = typeName || field.name;
         } else {
-          typeName = field.picklistValues.map(p => `'${p.value}'`).join(' | ')
+          typeName = field.picklistValues.map(p => `"${p.value}"`).join(' | ')
         }
       }
 
@@ -241,7 +241,7 @@ export class Generator {
     typeContents += this.generatePicklists(picklists);
 
     //record types
-    if(describe.recordTypeInfos.length) {
+    if(describe.recordTypeInfos.length && false) { // disabled
       typeContents += `\n\nexport interface ${objectName}RecordTypes {`;
       describe.recordTypeInfos.forEach(recordType => {
         if (recordType.master) {
@@ -299,7 +299,7 @@ export class Generator {
     typeContents.push(`/* tslint:disable:class-name */`);
     typeContents.push(`import { SObjectBase } from '../s-object-base';`);
     typeContents.push(`import { LayerObject } from './layer-object';`);
-    typeContents.push(`import { ID, ChildRecords, DateString, PhoneString, PercentString, RecordType } from './sobject-field-types';`);
+    typeContents.push(`import { ID, DateString, PhoneString, PercentString } from './sobject-field-types';`);
 
     return typeContents.join('\n');
   }
