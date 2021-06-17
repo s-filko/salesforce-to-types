@@ -2,6 +2,7 @@ import { core } from '@salesforce/command';
 import { OutputFlags } from '@oclif/parser';
 import { join } from 'path';
 import { Org, UX } from '@salesforce/core';
+import { PicklistEntry } from "jsforce";
 
 
 const header = `
@@ -47,7 +48,7 @@ export type ChildRecords<T, TString> = { records: Array<Partial<T> & Attribute<T
 export class Generator {
   flags: OutputFlags<any>;
   createdFiles: Array<String> = [];
-  globalPicklists: {[picklistName: string]: string[]} = {};
+  globalPicklists: {[picklistName: string]: PicklistEntry[]} = {};
   unmappedChildRelationships: Set<String>;
   org: Org
   ux: UX
@@ -97,7 +98,7 @@ export class Generator {
     const sObjects = Object.keys(sObjectsConfigs);
     const sObjectConf = sObjectsConfigs[objectName];
     let typeContents = '\n\n';
-    const picklists: {[picklistName: string]: string[]} = {};
+    const picklists: {[picklistName: string]: PicklistEntry[]} = {};
 
     const isFieldIgnored = (fieldName) => sObjectConf.fields && !sObjectConf.fields.includes(fieldName)
 
@@ -147,16 +148,16 @@ export class Generator {
         const isCreateGlobalEnum = globalPicklistFields.length && globalPicklistFields.includes(field.name);
 
         if(isCreateGlobalEnum && !this.globalPicklists.hasOwnProperty(field.name)) { // Add and use first picklist value
-          this.globalPicklists[field.name] = field.picklistValues.map(p => p.value);
+          this.globalPicklists[field.name] = field.picklistValues;
         }
 
         if(isCreateEnum) {
           typeName = objectName + field.name;
-          picklists[typeName] = field.picklistValues.map(p => p.value);
+          picklists[typeName] = field.picklistValues;
         } else if(isCreateGlobalEnum) {
-          typeName = typeName || field.name;
+          typeName = field.name || typeName;
         } else {
-          typeName = field.picklistValues.map(p => `"${p.value}"`).join(' | ')
+          typeName = field.picklistValues.map(p => `\`${p.value}\``).join(' | ')
         }
       }
 
@@ -255,7 +256,7 @@ export class Generator {
     return typeContents
   }
 
-  generatePicklists(picklists: {[picklistName: string]: string[]}) {
+  generatePicklists(picklists: {[picklistName: string]: PicklistEntry[]}) {
     const names = Object.keys(picklists);
     if(!names) {
       return '';
@@ -263,7 +264,7 @@ export class Generator {
 
     return names.map(picklistName => {
       let enumContent = `\nexport enum ${picklistName} {\n`;
-      enumContent += picklists[picklistName].map(value => `  ${this.formatPropertyName(value)} = '${value}'`).join(',\n');
+      enumContent += picklists[picklistName].map(entry => `  ${this.formatPropertyName(entry.label || entry.value)} = '${entry.value}'`).join(',\n');
       enumContent += '\n}';
       return enumContent
     }).join('\n');
@@ -308,7 +309,7 @@ export class Generator {
     const objectName: string = this.flags.sobject;
     let typeContents = this.generateFileHeader();
     const pascalObjectName = objectName.replace('__c', '').replace('_', '');
-    typeContents = await this.generateSObjectTypeContents(objectName)
+    typeContents += await this.generateSObjectTypeContents(objectName)
     let filePath = join(this.flags.outputdir, `${pascalObjectName.toLowerCase()}.ts`);
 
     await core.fs.writeFile(filePath, typeContents);
@@ -414,8 +415,14 @@ export class Generator {
     return jsonParsed;
   }
 
-  private formatPropertyName(name: string) {
-    return name.replace(/\s|-/g, '_').toUpperCase()
+  private formatPropertyName(name: any) {
+    name = name
+      .replace(/\W/g, '_') // replace all non-word character to _
+      .replace(/^_+|_+$/g, '') // remove _ symbol from start and end
+      .replace(/__+/g, '_') // remove duplicates of _
+      .toUpperCase();
+
+    return isNaN(name) ? name : `'${name}'`;
   }
 }
 
