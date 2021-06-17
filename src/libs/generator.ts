@@ -26,8 +26,8 @@ export interface SObject {
 }
 `;
 
-const constructor = `
-  constructor(data = {}) {
+const constructor = (className) => `
+  constructor(data: Partial<${className}> = {}) {
     super();
     super.setValues(data);
   }
@@ -221,7 +221,7 @@ export class Generator {
     // });
 
     // add constructor
-    typeContents += '\n' + constructor;
+    typeContents += '\n' + constructor(objectName);
 
     // overrides getAllFields() method
     // typeContents += this.generateGetAllFieldsMethod(sObjectConf.fields, soupLocalFields);
