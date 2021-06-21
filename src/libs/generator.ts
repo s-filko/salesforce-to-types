@@ -100,11 +100,18 @@ export class Generator {
     let typeContents = '\n\n';
     const picklists: {[picklistName: string]: PicklistEntry[]} = {};
 
-    const isFieldIgnored = (fieldName) => sObjectConf.fields && !sObjectConf.fields.includes(fieldName)
+    const isFieldIgnored = (fieldName) => sObjectConf.fields && !sObjectConf.fields.includes(fieldName);
+    const isSObjectOwnField = (fieldName) => describe.fields.map(field => field.name).includes(fieldName);
+
+    const soupLocalFields = sObjectConf.fields
+      .filter(field => !isSObjectOwnField(field))
+      .map(f => this.formatFieldName(f));
 
     typeContents += `export class ${objectName} extends SObjectBase<'${objectName}'> implements LayerObject {`;
 
-    typeContents += `\n  static sObjectFields = [${sObjectConf.fields.map(f => `'${f}'`).join(', ')}];\n`;
+    typeContents += `\n  static readonly sObjectSyncDownFields = [${sObjectConf.fields.map(f => `'${f}'`).join(', ')}] as const;`;
+    typeContents += `\n  static readonly sObjectOwnFields = [${sObjectConf.fields.filter(f => isSObjectOwnField(f)).map(f => `'${f}'`).join(', ')}] as const;`;
+    typeContents += `\n  static readonly sObjectLocalFields = [${soupLocalFields.map(f => `'${f}'`).join(', ')}] as const;\n`;
 
     // const specialChildrenToMapClone = Array.from(specialChildrenToMap || []);
     describe.fields.forEach(field => {
@@ -181,11 +188,9 @@ export class Generator {
       //   }
       // }
     });
-
-    const soupLocalFields = this.getSoupLocalFields(sObjectConf.fields, describe.fields.map(field => field.name));
     if(soupLocalFields.length) {
       typeContents += '\n\n  /* Soup local fields */';
-      typeContents += '\n  ' + soupLocalFields.map(fieldName => `['${fieldName}'] = undefined;`).join('\n  ');
+      typeContents += '\n  ' + soupLocalFields.map(fieldName => `['${fieldName}'];`).join('\n  ');
     }
 
     //child relationships
@@ -226,10 +231,12 @@ export class Generator {
     // overrides getAllFields() method
     // typeContents += this.generateGetAllFieldsMethod(sObjectConf.fields, soupLocalFields);
 
-    typeContents += `\n  getAllFields() {\n    return [...super.getAllFields(), ...${objectName}.sObjectFields];\n  }\n`;
+    typeContents += `\n  getAllFields() {\n    return [...super.getAllFields(), ...${objectName}.sObjectOwnFields, ...${objectName}.sObjectLocalFields];\n  }\n`;
 
     if (sObjectConf.createFields) {
       typeContents += '\n' + this.generateFieldsList('Create', sObjectConf.createFields);
+    } else {
+      typeContents += `\n  getCreateFields() {\n    return [...${objectName}.sObjectOwnFields];\n  }\n`;
     }
 
     if (sObjectConf.updateFields) {
@@ -423,6 +430,24 @@ export class Generator {
       .toUpperCase();
 
     return isNaN(name) ? name : `'${name}'`;
+  }
+
+  private formatFieldName(fieldString) {
+    const matches = fieldString.match(/^toLabel\((?<field>.*)\)\s*(?<alias>\w*)$/);
+    if (matches && matches.groups.field) {
+      if(!matches.groups.alias) {
+        return matches.groups.field;
+      } else if (!matches.groups.field.includes('.')) {
+        return matches.groups.alias;
+      }
+
+      const fieldParts = matches.groups.field.split('.');
+      fieldParts[fieldParts.length - 1] = matches.groups.alias;
+
+      return fieldParts.join('.');
+    }
+
+    return fieldString;
   }
 }
 
