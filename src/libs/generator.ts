@@ -107,11 +107,15 @@ export class Generator {
       .filter(field => !isSObjectOwnField(field))
       .map(f => this.formatFieldName(f));
 
+    const relatedObjectAndLocalProperties = soupLocalFields
+      .map(field => field.split('.')[0])
+      .filter((val, index, arr) => arr.indexOf(val) === index);
+
     typeContents += `export class ${objectName} extends SObjectBase<'${objectName}'> implements LayerObject {`;
 
     typeContents += `\n  static readonly sObjectSyncDownFields = [${sObjectConf.fields.map(f => `'${f}'`).join(', ')}] as const;`;
     typeContents += `\n  static readonly sObjectOwnFields = [${sObjectConf.fields.filter(f => isSObjectOwnField(f)).map(f => `'${f}'`).join(', ')}] as const;`;
-    typeContents += `\n  static readonly sObjectLocalFields = [${soupLocalFields.map(f => `'${f}'`).join(', ')}] as const;\n`;
+    typeContents += `\n  static readonly sObjectLocalFields = [${relatedObjectAndLocalProperties.map(f => `'${f}'`).join(', ')}] as const;\n`;
 
     // const specialChildrenToMapClone = Array.from(specialChildrenToMap || []);
     describe.fields.forEach(field => {
@@ -188,9 +192,9 @@ export class Generator {
       //   }
       // }
     });
+
     if(soupLocalFields.length) {
-      typeContents += '\n\n  /* Soup local fields */';
-      typeContents += '\n  ' + soupLocalFields.map(fieldName => `['${fieldName}'];`).join('\n  ');
+      typeContents += this.generateSoupLocalFields(soupLocalFields);
     }
 
     //child relationships
@@ -305,8 +309,8 @@ export class Generator {
     typeContents.push(`/* tslint:disable:max-line-length */`);
     typeContents.push(`/* tslint:disable:variable-name */`);
     typeContents.push(`/* tslint:disable:class-name */`);
-    typeContents.push(`import { SObjectBase } from '../s-object-base';`);
-    typeContents.push(`import { LayerObject } from './layer-object';`);
+    typeContents.push(`import { SObjectBase } from '../soup-local/s-object-base';`);
+    typeContents.push(`import { LayerObject } from '../soup-local/layer-object';`);
     typeContents.push(`import { ID, DateString, PhoneString, PercentString } from './sobject-field-types';`);
 
     return typeContents.join('\n');
@@ -449,6 +453,59 @@ export class Generator {
 
     return fieldString;
   }
+
+  // private formatFieldName(fieldString, fields: string[]): {name: string, type: string} {
+  //   const result = {
+  //     name: '',
+  //     type: 'any'
+  //   };
+  //   let fieldParts;
+  //   const matches = fieldString.match(/^toLabel\((?<field>.*)\)\s*(?<alias>\w*)$/);
+  //   if (matches && matches.groups.field) {
+  //     if(!matches.groups.alias) {
+  //       return {...result, name: matches.groups.field};
+  //     } else if (!matches.groups.field.includes('.')) {
+  //       return {...result, name: matches.groups.alias};
+  //     }
+  //
+  //     fieldParts = matches.groups.field.split('.');
+  //     fieldParts[fieldParts.length - 1] = matches.groups.alias;
+  //
+  //   } else if(fieldString.includes('.')) {
+  //     fieldParts = fieldString.split('.');
+  //   } else {
+  //     return {...result, name: fieldString};
+  //   }
+  //
+  //   const setType = (parts: string[]) => {
+  //     return `{${parts.shift()}: ${parts.length ? setType(parts) : 'any'}}`
+  //   };
+  //   result.name = fieldParts.shift();
+  //   result.type = setType(fieldParts);
+  //
+  //   return result;
+  // }
+
+  private generateSoupLocalFields(fields: string[]) {
+    const getObject = (parts: string[]) => {
+      return {[parts.shift()]: parts.length ? getObject(parts) : 'any'}
+    };
+
+    const getType = (val: object | string) => {
+      if(typeof val === 'string') {
+        return val;
+      }
+      return '{' + Object.keys(val).map(key => (`${key}: ${getType(val[key])}`)).join(', ') + '}'
+    };
+
+    const data = fields.reduce((acc, field) => {
+      const fieldParts = field.split('.');
+      return mergeDeep(acc, getObject(fieldParts));
+    }, {});
+
+    let title = '\n\n  /* Soup local fields */';
+    return title + Object.keys(data).reduce((res, field) => (`${res}\n  ${field}: ${getType(data[field])};`), '');
+  }
 }
 
 interface Configuration {
@@ -463,4 +520,37 @@ interface SobjectConfig {
   createFields: string[];
   updateFields: string[];
   picklistFields?:  string[];
+}
+
+
+/**
+ * TODO: Move to utils
+ * Simple object check.
+ * @param item
+ * @returns {boolean}
+ */
+export function isObject(item) {
+  return (item && typeof item === 'object' && !Array.isArray(item));
+}
+
+/**
+ * TODO: Move to utils
+ * Deep merge two objects.
+ */
+export function mergeDeep(target, ...sources) {
+  if (!sources.length) return target;
+  const source = sources.shift();
+
+  if (isObject(target) && isObject(source)) {
+    for (const key in source) {
+      if (isObject(source[key])) {
+        if (!target[key]) Object.assign(target, { [key]: {} });
+        mergeDeep(target[key], source[key]);
+      } else {
+        Object.assign(target, { [key]: source[key] });
+      }
+    }
+  }
+
+  return mergeDeep(target, ...sources);
 }
