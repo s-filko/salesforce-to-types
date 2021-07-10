@@ -135,7 +135,7 @@ export class Generator {
           break;
         case 'date':
         case 'datetime':
-          typeName = 'DateString | null';
+          typeName = 'DateString';
           break;
         case 'phone':
           typeName = 'PhoneString';
